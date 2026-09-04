@@ -163,10 +163,28 @@ def load_focos(lago, sy, sm, dyn):
                                    sy, sm, dynamic=dyn, geom_src=geom_src)
     return f5, f10
 
+@st.cache_data(ttl=3600)
+def load_focos_serie(lago, sy, sm, dyn):
+    """Carrega serie mensal de focos para os 3 anos de referencia."""
+    from utils.gee_loader import get_monthly_focos
+    geom_src = None
+    if dyn:
+        try:
+            feat = get_feature(lago, ASSETS["tocantins"], "Name")
+            geom_src = feat.geometry()
+        except:
+            pass
+    df5  = get_monthly_focos(lago, ASSETS["buffers"], 5000,
+                              ANO_BASE, sy, sm, dynamic=dyn, geom_src=geom_src)
+    df10 = get_monthly_focos(lago, ASSETS["buffers"], 10000,
+                              ANO_BASE, sy, sm, dynamic=dyn, geom_src=geom_src)
+    return df5, df10
+
 with st.spinner("Carregando dados..."):
     df_serie    = load_serie(lago_sel, nf, asset, current_year, current_month)
     t_a, t_p, t_h = load_stats(lago_sel, nf, asset, ano_sel, mes_num)
     f5, f10     = load_focos(lago_sel, ano_sel, mes_num, is_toc)
+    df_f5, df_f10 = load_focos_serie(lago_sel, current_year, current_month, is_toc)
 
 MESES_LABEL = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"]
 
@@ -201,11 +219,12 @@ for col, val, lbl, cls in kpis:
 st.markdown("")
 
 # ── ABAS DE ANALISE ───────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "Serie Temporal",
     "Analise Mensal",
     "Anomalia & Risco",
     "Comparativo de Anos",
+    "Focos de Calor",
     "Perfil do Lago"
 ])
 
@@ -372,25 +391,143 @@ with tab4:
         fig_anual.add_trace(go.Bar(
             x=media_anual["Ano"].astype(str),
             y=media_anual["Temperatura media (°C)"],
-            marker_color="#1565c0",
+            marker_color=[
+                "#e53935" if v == media_anual["Temperatura media (°C)"].max()
+                else "#1565c0"
+                for v in media_anual["Temperatura media (°C)"]
+            ],
+            text=media_anual["Temperatura media (°C)"].apply(lambda x: f"{x:.2f}°C"),
+            textposition="outside",
             hovertemplate="Ano: %{x}<br>Media: %{y:.2f} °C<extra></extra>"
         ))
         media_geral = media_anual["Temperatura media (°C)"].mean()
         fig_anual.add_hline(y=media_geral, line_dash="dash",
-                            line_color="#e53935",
-                            annotation_text=f"Media geral: {media_geral:.2f}°C")
+                            line_color="#fb8c00", line_width=1.5,
+                            annotation_text=f"Media geral: {media_geral:.2f}°C",
+                            annotation_font_color="#fb8c00")
         fig_anual.update_layout(
             title="Temperatura media anual",
-            xaxis=dict(title="Ano"),
-            yaxis=dict(title="Temperatura media (°C)",
-                       showgrid=True, gridcolor="#eceff1"),
+            xaxis=dict(
+                title="Ano",
+                type="category",
+                categoryorder="category ascending"
+            ),
+            yaxis=dict(
+                title="Temperatura media (°C)",
+                showgrid=True, gridcolor="#eceff1",
+                range=[media_anual["Temperatura media (°C)"].min() - 1,
+                       media_anual["Temperatura media (°C)"].max() + 1.5]
+            ),
             plot_bgcolor="white", paper_bgcolor="white",
-            height=300, margin=dict(l=60,r=20,t=50,b=40)
+            height=320, margin=dict(l=60,r=20,t=50,b=40)
         )
         st.plotly_chart(fig_anual, use_container_width=True)
 
-# ── ABA 5: PERFIL DO LAGO ─────────────────────────────────────
+# ── ABA 5: FOCOS DE CALOR ────────────────────────────────────
 with tab5:
+    st.markdown('<div class="sec-title">Focos de calor — serie mensal</div>',
+                unsafe_allow_html=True)
+
+    CORES_ANOS_F = {0: "#78909c", 1: "#e65100", 2: "#1565c0"}
+
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
+        st.markdown(f'''<div class="kpi">
+          <div class="kpi-val {"kpi-red" if f5 and f5>20 else "kpi-val"}">{f5}</div>
+          <div class="kpi-lbl">Focos no mes selecionado (5 km)</div>
+        </div>''', unsafe_allow_html=True)
+    with col_f2:
+        st.markdown(f'''<div class="kpi">
+          <div class="kpi-val {"kpi-red" if f10 and f10>20 else "kpi-val"}">{f10}</div>
+          <div class="kpi-lbl">Focos no mes selecionado (10 km)</div>
+        </div>''', unsafe_allow_html=True)
+
+    st.markdown("")
+
+    if df_f5 is not None and not df_f5.empty:
+        anos_f = sorted(df_f5["ano"].unique())
+
+        # Grafico focos mensais 5km
+        fig_f5 = go.Figure()
+        for i, ano in enumerate(anos_f):
+            sub = df_f5[df_f5["ano"]==ano].dropna(subset=["focos"])
+            cor = CORES_ANOS_F.get(i, "#546e7a")
+            fig_f5.add_trace(go.Bar(
+                x=sub["mes"], y=sub["focos"],
+                name=str(ano), marker_color=cor,
+                hovertemplate=f"<b>{ano}</b><br>Mes: %{{x}}<br>Focos: %{{y}}<extra></extra>"
+            ))
+        fig_f5.update_layout(
+            title="Focos de calor mensais — buffer 5 km",
+            xaxis=dict(tickmode="array", tickvals=list(range(1,13)),
+                       ticktext=MESES_LABEL, title="Mes"),
+            yaxis=dict(title="Numero de focos",
+                       showgrid=True, gridcolor="#eceff1"),
+            barmode="group",
+            plot_bgcolor="white", paper_bgcolor="white",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+            height=300, margin=dict(l=60,r=20,t=50,b=60)
+        )
+        st.plotly_chart(fig_f5, use_container_width=True)
+
+    if df_f10 is not None and not df_f10.empty:
+        anos_f10 = sorted(df_f10["ano"].unique())
+
+        fig_f10 = go.Figure()
+        for i, ano in enumerate(anos_f10):
+            sub = df_f10[df_f10["ano"]==ano].dropna(subset=["focos"])
+            cor = CORES_ANOS_F.get(i, "#546e7a")
+            fig_f10.add_trace(go.Bar(
+                x=sub["mes"], y=sub["focos"],
+                name=str(ano), marker_color=cor,
+                hovertemplate=f"<b>{ano}</b><br>Mes: %{{x}}<br>Focos: %{{y}}<extra></extra>"
+            ))
+        fig_f10.update_layout(
+            title="Focos de calor mensais — buffer 10 km",
+            xaxis=dict(tickmode="array", tickvals=list(range(1,13)),
+                       ticktext=MESES_LABEL, title="Mes"),
+            yaxis=dict(title="Numero de focos",
+                       showgrid=True, gridcolor="#eceff1"),
+            barmode="group",
+            plot_bgcolor="white", paper_bgcolor="white",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+            height=300, margin=dict(l=60,r=20,t=50,b=60)
+        )
+        st.plotly_chart(fig_f10, use_container_width=True)
+
+    # Acumulado anual de focos
+    if df_f5 is not None and not df_f5.empty:
+        st.markdown('<div class="sec-title">Focos acumulados no ano</div>',
+                    unsafe_allow_html=True)
+        fig_acum = go.Figure()
+        for i, (df_f, dist, cor) in enumerate([
+            (df_f5, "5 km", "#e65100"),
+            (df_f10, "10 km", "#b71c1c")
+        ]):
+            ano_atual = sorted(df_f["ano"].unique())[-1]
+            sub = df_f[df_f["ano"]==ano_atual].dropna(subset=["focos"]).copy()
+            sub["acum"] = sub["focos"].cumsum()
+            fig_acum.add_trace(go.Scatter(
+                x=sub["mes"], y=sub["acum"],
+                mode="lines+markers", name=f"Buffer {dist}",
+                line=dict(color=cor, width=2.5),
+                marker=dict(size=6),
+                hovertemplate=f"Buffer {dist}<br>Mes: %{{x}}<br>Acumulado: %{{y}}<extra></extra>"
+            ))
+        fig_acum.update_layout(
+            title=f"Focos acumulados em {ano_atual} — comparativo de buffers",
+            xaxis=dict(tickmode="array", tickvals=list(range(1,13)),
+                       ticktext=MESES_LABEL, title="Mes"),
+            yaxis=dict(title="Focos acumulados",
+                       showgrid=True, gridcolor="#eceff1"),
+            plot_bgcolor="white", paper_bgcolor="white",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+            height=300, margin=dict(l=60,r=20,t=50,b=60)
+        )
+        st.plotly_chart(fig_acum, use_container_width=True)
+
+# ── ABA 6: PERFIL DO LAGO ─────────────────────────────────────
+with tab6:
     st.markdown('<div class="sec-title">Perfil estatistico do lago</div>',
                 unsafe_allow_html=True)
     if not df_serie.empty:
