@@ -294,12 +294,13 @@ with tab3:
     if not df_serie.empty:
         anos_disp2 = sorted(df_serie["ano"].unique())
         ano_anom = st.selectbox("Ano para anomalia", list(reversed(anos_disp2)))
-        df_hist = df_serie[df_serie["ano"]<ano_anom].groupby("mes")["temperatura"].mean()
-        df_cur  = df_serie[df_serie["ano"]==ano_anom].dropna(subset=["temperatura"])
-        merged  = df_cur.merge(df_hist.reset_index(), on="mes",
-                               suffixes=("_cur","_hist"))
+        df_hist = df_serie[df_serie["ano"]<ano_anom].groupby("mes")["temperatura"].mean().reset_index()
+        df_hist.columns = ["mes", "temp_hist"]
+        df_cur  = df_serie[df_serie["ano"]==ano_anom][["mes","temperatura"]].dropna()
+        df_cur  = df_cur.rename(columns={"temperatura":"temp_cur"})
+        merged  = df_cur.merge(df_hist, on="mes")
         if not merged.empty:
-            merged["anomalia"] = merged["temperatura_cur"] - merged["temperatura"]
+            merged["anomalia"] = merged["temp_cur"] - merged["temp_hist"]
             colors = ["#e53935" if v>0 else "#1565c0" for v in merged["anomalia"]]
             fig_an = go.Figure()
             fig_an.add_trace(go.Bar(
@@ -331,8 +332,8 @@ with tab3:
                             unsafe_allow_html=True)
                 criticos["Mes"] = criticos["mes"].apply(lambda x: MESES_LABEL[x-1])
                 criticos["Anomalia (°C)"] = criticos["anomalia"].round(2)
-                criticos["Temperatura (°C)"] = criticos["temperatura_cur"].round(2)
-                criticos["Media historica (°C)"] = criticos["temperatura"].round(2)
+                criticos["Temperatura (°C)"] = criticos["temp_cur"].round(2)
+                criticos["Media historica (°C)"] = criticos["temp_hist"].round(2)
                 st.dataframe(
                     criticos[["Mes","Temperatura (°C)","Media historica (°C)","Anomalia (°C)"]],
                     use_container_width=True, hide_index=True)
