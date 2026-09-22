@@ -20,17 +20,16 @@ def init_gee(secrets=None):
 
 def get_latest_date():
     """
-    Retorna (year, month, day) baseado no MOD11A1 diario —
-    produto mais recente, com atraso de 2-5 dias.
-    Tambem retorna a data do MOD11A2 para exibir no header.
+    Retorna (year, month, day) do ultimo periodo do MOD11A2 (base historica).
+    O MOD11A2 define o mes de referencia global do dashboard.
+    A data do dado diario por lago e calculada em get_temp_latest_day.
     """
-    # MOD11A1 diario — mais recente
-    col_d = ee.ImageCollection("MODIS/061/MOD11A1").sort("system:time_start", False)
-    latest_d = col_d.first()
-    date_d = ee.Date(latest_d.get("system:time_start"))
-    info_d = date_d.getInfo()
-    dt_d = datetime.utcfromtimestamp(info_d["value"] / 1000)
-    return dt_d.year, dt_d.month, dt_d.day
+    col = ee.ImageCollection("MODIS/061/MOD11A2").sort("system:time_start", False)
+    latest = col.first()
+    date = ee.Date(latest.get("system:time_start"))
+    info = date.getInfo()
+    dt = datetime.utcfromtimestamp(info["value"] / 1000)
+    return dt.year, dt.month, dt.day
 
 def modis_temperature(image):
     lst = image.select("LST_Day_1km").multiply(0.02).subtract(273.15).rename("surface_temperature")
@@ -231,14 +230,16 @@ def get_monthly_temperature(name, asset_id, ano_base, ref_year, ref_month, name_
 
 def get_temp_latest_day(lake_name, asset_id, name_field="name"):
     """
-    Retorna a temperatura do dia mais recente disponivel no MOD11A1.
-    Busca os ultimos 15 dias e pega o mais recente com dado valido.
-    Retorna (temperatura, data_str) ou (None, None).
+    Retorna (temperatura, data_str) do ultimo dia com pixel valido
+    no MOD11A1 para o lago especifico.
+    Considera nuvens: busca os ultimos 30 dias e pega o mais recente
+    que tenha reducao valida sobre a geometria do lago.
     """
     from datetime import datetime as _dt, timedelta
     now = _dt.utcnow()
-    start_ee = ee.Date(now - timedelta(days=15))
-    end_ee   = ee.Date(now)
+    start_ee = ee.Date(
+        (now - timedelta(days=30)).strftime("%Y-%m-%d"))
+    end_ee = ee.Date(now.strftime("%Y-%m-%d"))
 
     feat = get_feature(lake_name, asset_id, name_field)
     geom_safe, _ = _safe_geometry(feat)
@@ -259,16 +260,22 @@ def get_temp_latest_day(lake_name, asset_id, name_field="name"):
         return img.set("temp_val", val)
 
     col_red = col.map(reduce_img)
+    # Filtra apenas imagens com pixel valido sobre o lago
     col_valid = col_red.filter(ee.Filter.notNull(["temp_val"]))
 
     try:
         n = col_valid.size().getInfo()
         if n == 0:
             return None, None
-        latest = col_valid.first()
+        # Pega o mais recente com dado valido
+        latest = col_valid.sort("system:time_start", False).first()
         temp = latest.get("temp_val").getInfo()
         date_ts = latest.get("system:time_start").getInfo()
-        date_str = _dt.utcfromtimestamp(date_ts/1000).strftime("%d/%b/%Y")
+        date_obj = _dt.utcfromtimestamp(date_ts / 1000)
+        # Formato: "10/Set/2026"
+        meses_pt = ["Jan","Fev","Mar","Abr","Mai","Jun",
+                    "Jul","Ago","Set","Out","Nov","Dez"]
+        date_str = f"{date_obj.day:02d}/{meses_pt[date_obj.month-1]}/{date_obj.year}"
         return round(temp, 2) if temp else None, date_str
     except:
         return None, None
