@@ -19,14 +19,18 @@ def init_gee(secrets=None):
         st.stop()
 
 def get_latest_date():
-    """Retorna (year, month, day) do ultimo dado disponivel no MOD11A2."""
-    col = ee.ImageCollection("MODIS/061/MOD11A2").sort("system:time_start", False)
-    latest = col.first()
-    date = ee.Date(latest.get("system:time_start"))
-    info = date.getInfo()
-    ts = info["value"] / 1000
-    dt = datetime.utcfromtimestamp(ts)
-    return dt.year, dt.month, dt.day
+    """
+    Retorna (year, month, day) baseado no MOD11A1 diario —
+    produto mais recente, com atraso de 2-5 dias.
+    Tambem retorna a data do MOD11A2 para exibir no header.
+    """
+    # MOD11A1 diario — mais recente
+    col_d = ee.ImageCollection("MODIS/061/MOD11A1").sort("system:time_start", False)
+    latest_d = col_d.first()
+    date_d = ee.Date(latest_d.get("system:time_start"))
+    info_d = date_d.getInfo()
+    dt_d = datetime.utcfromtimestamp(info_d["value"] / 1000)
+    return dt_d.year, dt_d.month, dt_d.day
 
 def modis_temperature(image):
     lst = image.select("LST_Day_1km").multiply(0.02).subtract(273.15).rename("surface_temperature")
@@ -224,11 +228,57 @@ def get_monthly_temperature(name, asset_id, ano_base, ref_year, ref_month, name_
                 records.append({"ano": year, "mes": month, "temperatura": None})
     return pd.DataFrame(records)
 
+
+def get_temp_latest_day(lake_name, asset_id, name_field="name"):
+    """
+    Retorna a temperatura do dia mais recente disponivel no MOD11A1.
+    Busca os ultimos 15 dias e pega o mais recente com dado valido.
+    Retorna (temperatura, data_str) ou (None, None).
+    """
+    from datetime import datetime as _dt, timedelta
+    now = _dt.utcnow()
+    start_ee = ee.Date(now - timedelta(days=15))
+    end_ee   = ee.Date(now)
+
+    feat = get_feature(lake_name, asset_id, name_field)
+    geom_safe, _ = _safe_geometry(feat)
+
+    col = (ee.ImageCollection("MODIS/061/MOD11A1")
+           .filterDate(start_ee, end_ee)
+           .filterBounds(geom_safe.bounds())
+           .map(modis_temperature)
+           .select("surface_temperature")
+           .sort("system:time_start", False))
+
+    def reduce_img(img):
+        val = img.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=geom_safe,
+            scale=1000, maxPixels=1e13
+        ).get("surface_temperature")
+        return img.set("temp_val", val)
+
+    col_red = col.map(reduce_img)
+    col_valid = col_red.filter(ee.Filter.notNull(["temp_val"]))
+
+    try:
+        n = col_valid.size().getInfo()
+        if n == 0:
+            return None, None
+        latest = col_valid.first()
+        temp = latest.get("temp_val").getInfo()
+        date_ts = latest.get("system:time_start").getInfo()
+        date_str = _dt.utcfromtimestamp(date_ts/1000).strftime("%d/%b/%Y")
+        return round(temp, 2) if temp else None, date_str
+    except:
+        return None, None
+
 def get_temp_stats(name, asset_id, sel_year, sel_month, name_field="name"):
     """
-    Retorna (t_atual, t_ano_anterior, t_media_historica).
-    - Mes atual (ano+mes == hoje): MOD11A1 diario
-    - Meses anteriores: MOD11A2 8 dias
+    Retorna (t_atual_dia, t_prev, t_hist):
+    - t_atual_dia: temperatura do DIA mais recente do MOD11A1
+    - t_prev:      media do mesmo mes no ano anterior (MOD11A2)
+    - t_hist:      media historica do mes (MOD11A2, ultimos 3 anos)
     """
     from datetime import datetime as _dt
     _now = _dt.utcnow()
@@ -237,16 +287,14 @@ def get_temp_stats(name, asset_id, sel_year, sel_month, name_field="name"):
     feat = get_feature(name, asset_id, name_field)
     geom_safe, _ = _safe_geometry(feat)
 
-    def get_temp(year, month):
+    def get_temp_mensal(year, month):
+        """Media mensal via MOD11A2."""
         start = f"{year}-{month:02d}-01"
         nm = month % 12 + 1
         ny = year + 1 if month == 12 else year
         end = f"{ny}-{nm:02d}-01"
-        colecao = ("MODIS/061/MOD11A1"
-                   if (year == _cy and month == _cm)
-                   else "MODIS/061/MOD11A2")
         try:
-            col = (ee.ImageCollection(colecao)
+            col = (ee.ImageCollection("MODIS/061/MOD11A2")
                    .filterDate(start, end)
                    .filterBounds(geom_safe.bounds())
                    .map(modis_temperature)
@@ -259,9 +307,15 @@ def get_temp_stats(name, asset_id, sel_year, sel_month, name_field="name"):
         except:
             return None
 
-    t_atual = get_temp(sel_year, sel_month)
-    t_prev  = get_temp(sel_year - 1, sel_month)
-    hist = [get_temp(y, sel_month) for y in range(sel_year - 3, sel_year)]
+    # Para o mes atual: pega o dia mais recente do MOD11A1
+    if sel_year == _cy and sel_month == _cm:
+        t_atual, _ = get_temp_latest_day(name, asset_id, name_field)
+    else:
+        # Para meses anteriores: media mensal MOD11A2
+        t_atual = get_temp_mensal(sel_year, sel_month)
+
+    t_prev = get_temp_mensal(sel_year - 1, sel_month)
+    hist = [get_temp_mensal(y, sel_month) for y in range(sel_year - 3, sel_year)]
     hist = [v for v in hist if v]
     t_hist = round(sum(hist) / len(hist), 2) if hist else None
     return t_atual, t_prev, t_hist

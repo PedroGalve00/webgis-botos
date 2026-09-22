@@ -10,6 +10,7 @@ from utils.gee_loader import (
     init_gee, get_latest_date, get_tocantins_names,
     get_tocantins_display_names, get_monthly_temperature,
     get_monthly_temperature_hybrid, get_daily_temperature_current_month,
+    get_temp_latest_day,
     get_temp_stats, get_focos_count_periodo, get_feature,
     get_all_lakes_temp_acumulado, get_monthly_focos
 )
@@ -141,7 +142,7 @@ st.markdown(f"""
     <div class="hdr-sub">Painel analitico completo — WWF Brasil</div>
   </div>
   <div class="hdr-date" style="z-index:1">
-    Referencia MODIS<br><b>{current_day:02d}/{MESES[current_month-1]}/{current_year}</b>
+    Dado mais recente (MOD11A1)<br><b>{current_day:02d}/{MESES[current_month-1]}/{current_year}</b>
   </div>
 </div>
 """, unsafe_allow_html=True)
@@ -201,6 +202,11 @@ def load_all_lakes(lagos, asset, ano_base, cy, cm, nf):
     return get_all_lakes_temp_acumulado(lagos, asset, ano_base, cy, cm, nf)
 
 @st.cache_data(ttl=1800)
+def load_temp_dia(lago, nf, asset):
+    """Temperatura do dia mais recente (MOD11A1) e data."""
+    return get_temp_latest_day(lago, asset, nf)
+
+@st.cache_data(ttl=1800)
 def load_diario(lago, nf, asset, cy, cm):
     # Temperatura diaria do mes atual (MOD11A1) — cache de 30min
     return get_daily_temperature_current_month(lago, asset, cy, cm, nf)
@@ -223,6 +229,7 @@ with st.spinner("Carregando dados..."):
     f5, f10        = load_focos(lago_sel, ano_sel, mes_num, is_toc)
     df_f5, df_f10  = load_focos_serie(lago_sel, current_year, current_month, is_toc)
     df_diario     = load_diario(lago_sel, nf, asset, current_year, current_month)
+    t_dia, data_dia = load_temp_dia(lago_sel, nf, asset)
 
 MESES_LABEL = MESES
 
