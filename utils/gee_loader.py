@@ -226,9 +226,9 @@ def get_monthly_temperature(name, asset_id, ano_base, ref_year, ref_month, name_
 
 def get_temp_stats(name, asset_id, sel_year, sel_month, name_field="name"):
     """
-    Temperatura do mes selecionado, ano anterior e media historica.
-    Mes atual (ano+mes == hoje): MOD11A1 diario — mais recente.
-    Meses anteriores: MOD11A2 8 dias — serie historica consistente.
+    Retorna (t_atual, t_ano_anterior, t_media_historica).
+    - Mes atual (ano+mes == hoje): MOD11A1 diario
+    - Meses anteriores: MOD11A2 8 dias
     """
     from datetime import datetime as _dt
     _now = _dt.utcnow()
@@ -258,6 +258,13 @@ def get_temp_stats(name, asset_id, sel_year, sel_month, name_field="name"):
             return round(val, 2) if val else None
         except:
             return None
+
+    t_atual = get_temp(sel_year, sel_month)
+    t_prev  = get_temp(sel_year - 1, sel_month)
+    hist = [get_temp(y, sel_month) for y in range(sel_year - 3, sel_year)]
+    hist = [v for v in hist if v]
+    t_hist = round(sum(hist) / len(hist), 2) if hist else None
+    return t_atual, t_prev, t_hist
 
 def get_focos_count_periodo(name, buffer_asset, dist_m, year, month,
                              name_field="name", dynamic=False, geom_src=None):
