@@ -134,18 +134,8 @@ GRUPOS["Tocantins-Araguaia"] = toc_display_names
 
 # ── HEADER ────────────────────────────────────────────────────
 logo_html = f'<img src="{LOGO_WWF}" style="height:48px;margin-right:14px">' if LOGO_WWF else ""
-st.markdown(f"""
-<div class="hdr">
-  {logo_html}
-  <div style="flex:1;z-index:1">
-    <div class="hdr-title">Analises e Estatisticas — Lagos Amazonicos</div>
-    <div class="hdr-sub">Painel analitico completo — WWF Brasil</div>
-  </div>
-  <div class="hdr-date" style="z-index:1">
-    Dado mais recente (MOD11A1)<br><b>{current_day:02d}/{MESES[current_month-1]}/{current_year}</b>
-  </div>
-</div>
-""", unsafe_allow_html=True)
+# Header sera renderizado APOS carregar os dados do lago
+_header_placeholder = st.empty()
 
 # ── SIDEBAR ───────────────────────────────────────────────────
 with st.sidebar:
@@ -223,6 +213,7 @@ def load_focos_serie(lago, cy, cm, dyn):
     df10 = get_monthly_focos(lago, ASSETS["buffers"], 10000, ANO_BASE, cy, cm, dynamic=dyn, geom_src=geom_src)
     return df5, df10
 
+# Carrega dado mais recente do lago ANTES do header
 with st.spinner("Carregando dados..."):
     df_serie       = load_serie(lago_sel, nf, asset, current_year, current_month)
     t_a, t_p, t_h  = load_stats(lago_sel, nf, asset, ano_sel, mes_num)
@@ -230,6 +221,22 @@ with st.spinner("Carregando dados..."):
     df_f5, df_f10  = load_focos_serie(lago_sel, current_year, current_month, is_toc)
     df_diario     = load_diario(lago_sel, nf, asset, current_year, current_month)
     t_dia, data_dia = load_temp_dia(lago_sel, nf, asset)
+
+# Renderiza header com data correta do lago selecionado
+_data_header = data_dia if data_dia else f"{current_day:02d}/{MESES[current_month-1]}/{current_year}"
+_label_header = "Ultimo dado valido (MOD11A1)" if data_dia else "Referencia MODIS"
+_header_placeholder.markdown(f"""
+<div class=\"hdr\">
+  {logo_html}
+  <div style=\"flex:1;z-index:1\">
+    <div class=\"hdr-title\">Analises e Estatisticas — Lagos Amazonicos</div>
+    <div class=\"hdr-sub\">Painel analitico completo — WWF Brasil</div>
+  </div>
+  <div class=\"hdr-date\" style=\"z-index:1\">
+    {_label_header}<br><b>{_data_header}</b>
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
 MESES_LABEL = MESES
 
