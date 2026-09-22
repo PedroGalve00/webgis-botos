@@ -283,47 +283,6 @@ with tab1:
         else:
             st.info("Dados diarios ainda nao disponiveis para este mes.")
 
-        if False:  # bloco antigo desativado
-            fig_serie = go.Figure()
-            for ano in anos:
-                sub = df_serie[df_serie["ano"]==ano].dropna(subset=["temperatura"])
-                cor = CORES_LINHA.get(ano, "#90a4ae")
-            fig_serie.add_trace(go.Scatter(
-                x=sub["mes"], y=sub["temperatura"],
-                mode="lines+markers", name=str(ano),
-                line=dict(color=cor, width=3 if ano==anos[-1] else 1.5,
-                          dash="solid" if ano>=anos[-1]-1 else "dot"),
-                marker=dict(size=6 if ano==anos[-1] else 4),
-                hovertemplate=f"<b>{ano}</b><br>Mes: %{{x}}<br>Temp: %{{y:.2f}} °C<extra></extra>"
-            ))
-        # Media historica
-        mh = df_serie[df_serie["ano"]<anos[-1]].groupby("mes")["temperatura"].mean()
-        fig_serie.add_trace(go.Scatter(
-            x=mh.index, y=mh.values, mode="lines",
-            name="Media historica",
-            line=dict(color="#E6DCCD", width=1.5, dash="dash"),
-            hovertemplate="Media historica<br>Mes: %{x}<br>%{y:.2f} °C<extra></extra>"
-        ))
-        fig_serie.add_vline(x=mes_num, line_dash="dot",
-                            line_color="#C18C5D", line_width=1.5,
-                            annotation_text=MESES_LABEL[mes_num-1],
-                            annotation_font_color="#C18C5D")
-        fig_serie.update_layout(
-            xaxis=dict(tickmode="array", tickvals=list(range(1,13)),
-                       ticktext=MESES_LABEL, title="Mes",
-                       showgrid=True, gridcolor="#F0EBE5",
-                       tickfont=dict(color="#2C2C24")),
-            yaxis=dict(title="Temperatura (°C)", showgrid=True,
-                       gridcolor="#F0EBE5", tickfont=dict(color="#2C2C24")),
-            plot_bgcolor="#FDFCF8", paper_bgcolor="#FDFCF8",
-            legend=dict(orientation="h", yanchor="bottom", y=1.02,
-                        font=dict(color="#2C2C24")),
-            height=320, margin=dict(l=55,r=20,t=40,b=55),
-            font=dict(family="Nunito, sans-serif")
-        )
-        # fim bloco antigo
-        if True:
-            pass
 
         # ── Graficos de desvio por mes ─────────────────────────────────
         st.markdown(
