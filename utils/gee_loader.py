@@ -541,22 +541,32 @@ def get_daily_temperature_current_month(lake_name, asset_id, year, month,
                                          name_field="name"):
     """
     Busca temperatura diaria (MOD11A1) para cada dia disponivel
-    no mes atual. Retorna DataFrame com colunas: dia, temperatura.
+    no mes. Usa hoje como data final para garantir dados mais recentes.
+    Retorna DataFrame com colunas: data, dia, temperatura.
     """
+    from datetime import datetime as _dt
     feat = get_feature(lake_name, asset_id, name_field)
     geom_safe, _ = _safe_geometry(feat)
+
     start = f"{year}-{month:02d}-01"
-    nm = month % 12 + 1
-    ny = year + 1 if month == 12 else year
-    end = f"{ny}-{nm:02d}-01"
+
+    # Para o mes atual: usa hoje como fim para pegar todos os dias disponiveis
+    now = _dt.utcnow()
+    if year == now.year and month == now.month:
+        # Avanca 1 dia para incluir hoje
+        end = (now.replace(hour=23, minute=59)).strftime("%Y-%m-%d")
+    else:
+        nm = month % 12 + 1
+        ny = year + 1 if month == 12 else year
+        end = f"{ny}-{nm:02d}-01"
 
     col = (ee.ImageCollection("MODIS/061/MOD11A1")
            .filterDate(start, end)
            .filterBounds(geom_safe.bounds())
            .map(modis_temperature)
-           .select("surface_temperature"))
+           .select("surface_temperature")
+           .sort("system:time_start", True))  # ordena crescente por data
 
-    # Reduz cada imagem diaria sobre o lago
     def reduce_day(img):
         val = img.reduceRegion(
             reducer=ee.Reducer.mean(),
@@ -567,8 +577,11 @@ def get_daily_temperature_current_month(lake_name, asset_id, year, month,
         return img.set("temp", val).set("date_str", date)
 
     col_reduced = col.map(reduce_day)
-    dates = col_reduced.aggregate_array("date_str").getInfo()
-    temps = col_reduced.aggregate_array("temp").getInfo()
+    # Filtra apenas dias com pixel valido sobre o lago
+    col_valid = col_reduced.filter(ee.Filter.notNull(["temp"]))
+
+    dates = col_valid.aggregate_array("date_str").getInfo()
+    temps = col_valid.aggregate_array("temp").getInfo()
 
     records = []
     for d, t in zip(dates, temps):

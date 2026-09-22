@@ -191,12 +191,12 @@ def load_focos(lago, sy, sm, dyn):
 def load_all_lakes(lagos, asset, ano_base, cy, cm, nf):
     return get_all_lakes_temp_acumulado(lagos, asset, ano_base, cy, cm, nf)
 
-@st.cache_data(ttl=1800)
+@st.cache_data(ttl=600)  # 10 min
 def load_temp_dia(lago, nf, asset):
     """Temperatura do dia mais recente (MOD11A1) e data."""
     return get_temp_latest_day(lago, asset, nf)
 
-@st.cache_data(ttl=1800)
+@st.cache_data(ttl=600)  # 10 min — dados diarios mudam com frequencia
 def load_diario(lago, nf, asset, cy, cm):
     # Temperatura diaria do mes atual (MOD11A1) — cache de 30min
     return get_daily_temperature_current_month(lago, asset, cy, cm, nf)
