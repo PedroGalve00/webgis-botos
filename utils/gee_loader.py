@@ -225,31 +225,39 @@ def get_monthly_temperature(name, asset_id, ano_base, ref_year, ref_month, name_
     return pd.DataFrame(records)
 
 def get_temp_stats(name, asset_id, sel_year, sel_month, name_field="name"):
-    """Temperatura do mes selecionado, ano anterior e media historica."""
+    """
+    Temperatura do mes selecionado, ano anterior e media historica.
+    Mes atual (ano+mes == hoje): MOD11A1 diario — mais recente.
+    Meses anteriores: MOD11A2 8 dias — serie historica consistente.
+    """
+    from datetime import datetime as _dt
+    _now = _dt.utcnow()
+    _cy, _cm = _now.year, _now.month
+
     feat = get_feature(name, asset_id, name_field)
-    geom = feat.geometry()
+    geom_safe, _ = _safe_geometry(feat)
+
     def get_temp(year, month):
         start = f"{year}-{month:02d}-01"
         nm = month % 12 + 1
         ny = year + 1 if month == 12 else year
         end = f"{ny}-{nm:02d}-01"
+        colecao = ("MODIS/061/MOD11A1"
+                   if (year == _cy and month == _cm)
+                   else "MODIS/061/MOD11A2")
         try:
-            col = (ee.ImageCollection("MODIS/061/MOD11A2")
-                   .filterDate(start, end).filterBounds(geom)
-                   .map(modis_temperature).select("surface_temperature").mean())
+            col = (ee.ImageCollection(colecao)
+                   .filterDate(start, end)
+                   .filterBounds(geom_safe.bounds())
+                   .map(modis_temperature)
+                   .select("surface_temperature").mean())
             val = col.reduceRegion(
-                reducer=ee.Reducer.mean(), geometry=geom,
-                scale=1000, maxPixels=1e13
+                reducer=ee.Reducer.mean(),
+                geometry=geom_safe, scale=1000, maxPixels=1e13
             ).get("surface_temperature").getInfo()
             return round(val, 2) if val else None
         except:
             return None
-    t_atual = get_temp(sel_year, sel_month)
-    t_prev  = get_temp(sel_year - 1, sel_month)
-    hist = [get_temp(y, sel_month) for y in range(sel_year - 3, sel_year)]
-    hist = [v for v in hist if v]
-    t_hist = round(sum(hist) / len(hist), 2) if hist else None
-    return t_atual, t_prev, t_hist
 
 def get_focos_count_periodo(name, buffer_asset, dist_m, year, month,
                              name_field="name", dynamic=False, geom_src=None):

@@ -141,7 +141,7 @@ st.markdown(f"""
     <div class="hdr-sub">Painel analitico completo — WWF Brasil</div>
   </div>
   <div class="hdr-date" style="z-index:1">
-    Referencia MODIS<br><b>{MESES[current_month-1]}/{current_year}</b>
+    Referencia MODIS<br><b>{current_day:02d}/{MESES[current_month-1]}/{current_year}</b>
   </div>
 </div>
 """, unsafe_allow_html=True)
