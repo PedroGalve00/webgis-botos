@@ -19,13 +19,14 @@ def init_gee(secrets=None):
         st.stop()
 
 def get_latest_date():
+    """Retorna (year, month, day) do ultimo dado disponivel no MOD11A2."""
     col = ee.ImageCollection("MODIS/061/MOD11A2").sort("system:time_start", False)
     latest = col.first()
     date = ee.Date(latest.get("system:time_start"))
     info = date.getInfo()
     ts = info["value"] / 1000
     dt = datetime.utcfromtimestamp(ts)
-    return dt.year, dt.month
+    return dt.year, dt.month, dt.day
 
 def modis_temperature(image):
     lst = image.select("LST_Day_1km").multiply(0.02).subtract(273.15).rename("surface_temperature")

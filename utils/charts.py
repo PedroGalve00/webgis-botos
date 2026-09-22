@@ -224,33 +224,52 @@ def grafico_temperatura_mensal_hibrido(df, lago_nome, ref_year, sel_month):
 
     fig = go.Figure()
     for ano in anos:
-        sub = df[df["ano"]==ano].dropna(subset=["temperatura"])
+        sub = df[df["ano"]==ano].dropna(subset=["temperatura"]).sort_values("mes")
         cor = CORES.get(ano, "#90a4ae")
         width = 3 if ano == anos[-1] else 1.5
         dash = "solid" if ano >= anos[-1]-1 else "dot"
 
-        # Separa pontos normais e ponto atual (MOD11A1)
+        tem_atual = "produto" in sub.columns and (sub["produto"] == "MOD11A1").any()
         sub_normal = sub[sub["produto"] != "MOD11A1"] if "produto" in sub.columns else sub
         sub_atual  = sub[sub["produto"] == "MOD11A1"] if "produto" in sub.columns else pd.DataFrame()
 
-        fig.add_trace(go.Scatter(
-            x=sub_normal["mes"], y=sub_normal["temperatura"],
-            mode="lines+markers", name=str(ano),
-            line=dict(color=cor, width=width, dash=dash),
-            marker=dict(size=5 if ano != anos[-1] else 6),
-            legendgroup=str(ano),
-            hovertemplate=f"<b>{ano}</b><br>Mes: %{{x}}<br>%{{y:.2f}}°C (MOD11A2)<extra></extra>"
-        ))
-
-        # Ponto atual com marcador especial (estrela)
-        if not sub_atual.empty:
+        if tem_atual and not sub_atual.empty and not sub_normal.empty:
+            # Linha historica
+            fig.add_trace(go.Scatter(
+                x=sub_normal["mes"], y=sub_normal["temperatura"],
+                mode="lines+markers", name=str(ano),
+                line=dict(color=cor, width=width, dash=dash),
+                marker=dict(size=6),
+                legendgroup=str(ano),
+                hovertemplate=f"<b>{ano}</b><br>Mes: %{{x}}<br>%{{y:.2f}}°C (MOD11A2)<extra></extra>"
+            ))
+            # Linha pontilhada conectando ao ponto atual
+            ultimo = sub_normal.iloc[-1]
+            atual  = sub_atual.iloc[0]
+            fig.add_trace(go.Scatter(
+                x=[ultimo["mes"], atual["mes"]],
+                y=[ultimo["temperatura"], atual["temperatura"]],
+                mode="lines", showlegend=False,
+                line=dict(color=cor, width=width, dash="dot"),
+                hoverinfo="skip"
+            ))
+            # Estrela no ponto atual
             fig.add_trace(go.Scatter(
                 x=sub_atual["mes"], y=sub_atual["temperatura"],
                 mode="markers", name=f"{ano} (atual*)",
-                marker=dict(symbol="star", size=14,
+                marker=dict(symbol="star", size=16,
                             color=cor, line=dict(color="white", width=1.5)),
                 legendgroup=str(ano),
-                hovertemplate=f"<b>{ano} — dado preliminar</b><br>Mes: %{{x}}<br>%{{y:.2f}}°C (MOD11A1 diario)<extra></extra>"
+                hovertemplate=f"<b>{ano} — preliminar (MOD11A1)</b><br>Mes: %{{x}}<br>%{{y:.2f}}°C<extra></extra>"
+            ))
+        else:
+            fig.add_trace(go.Scatter(
+                x=sub["mes"], y=sub["temperatura"],
+                mode="lines+markers", name=str(ano),
+                line=dict(color=cor, width=width, dash=dash),
+                marker=dict(size=5 if ano != anos[-1] else 6),
+                legendgroup=str(ano),
+                hovertemplate=f"<b>{ano}</b><br>Mes: %{{x}}<br>%{{y:.2f}}°C<extra></extra>"
             ))
 
     # Media historica

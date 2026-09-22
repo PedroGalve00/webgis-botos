@@ -123,7 +123,7 @@ def obter_tocantins():
 def obter_display_map():
     return get_tocantins_display_names(ASSETS["tocantins"])
 
-current_year, current_month = obter_data()
+current_year, current_month, current_day = obter_data()
 MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"]
 
 tocantins_names   = obter_tocantins()
